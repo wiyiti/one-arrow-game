@@ -275,19 +275,15 @@ class ArrowGame:
                     self.state = 'WIN'
 
     # ---------- 绘制 ----------
-    def draw_arrow(self, x, y, direction, color=None, size=40):
-        """以 (x,y) 为中心画带箭杆的箭头，direction 决定方向，color 覆盖默认色。"""
-        if color is None:
-            color = DIR_COLORS.get(direction, (100, 100, 100))
+    def _draw_arrow_on(self, surf, x, y, direction, color, size):
+        """在指定 surface 上画箭头（无抗锯齿，供离屏渲染后缩放用）。"""
         h = size // 2
         shaft_w = 10
-        # 箭杆矩形
         if direction in ('U', 'D'):
             shaft = pygame.Rect(x - shaft_w // 2, y - h + 6, shaft_w, size - 12)
         else:
             shaft = pygame.Rect(x - h + 6, y - shaft_w // 2, size - 12, shaft_w)
-        pygame.draw.rect(self.screen, color, shaft, border_radius=3)
-        # 箭头三角
+        pygame.draw.rect(surf, color, shaft, border_radius=3)
         if direction == 'U':
             pts = [(x, y - h), (x - h, y - h + 18), (x + h, y - h + 18)]
         elif direction == 'D':
@@ -296,7 +292,18 @@ class ArrowGame:
             pts = [(x - h, y), (x - h + 18, y - h), (x - h + 18, y + h)]
         else:
             pts = [(x + h, y), (x + h - 18, y - h), (x + h - 18, y + h)]
-        pygame.draw.polygon(self.screen, color, pts)
+        pygame.draw.polygon(surf, color, pts)
+
+    def draw_arrow(self, x, y, direction, color=None, size=40):
+        """抗锯齿箭头：2倍离屏渲染后平滑缩放。"""
+        if color is None:
+            color = DIR_COLORS.get(direction, (100, 100, 100))
+        S = 2  # 超采样倍数
+        big = size * S
+        tmp = pygame.Surface((big + 20, big + 20), pygame.SRCALPHA)
+        self._draw_arrow_on(tmp, (big + 20) // 2, (big + 20) // 2, direction, color, big)
+        scaled = pygame.transform.smoothscale(tmp, (size + 10, size + 10))
+        self.screen.blit(scaled, (x - (size + 10) // 2, y - (size + 10) // 2))
 
     def draw_stars(self, cx, cy, count, star_size=24):
         """在 (cx, cy) 居中画 count 颗实心星，其余空心。"""
