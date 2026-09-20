@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# 虚拟环境
+venv/
+.venv/
+
+# 临时/日志文件
+*.log
+diag_*.txt
+run_log.txt
+progress.json
+
+# IDE
+.vscode/
+.idea/
+
+# 系统
+Thumbs.db
+Desktop.ini
