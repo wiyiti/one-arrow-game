@@ -32,7 +32,6 @@ SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "progress.j
 BG_COLOR        = (245, 240, 230)
 BOARD_COLOR     = (222, 212, 190)
 GRID_LINE       = (185, 175, 155)
-ARROW_COLOR     = (60, 95, 170)
 BLOCKED_COLOR   = (200, 80, 80)
 TEXT_COLOR      = (55, 55, 55)
 BTN_COLOR       = (90, 130, 200)
@@ -42,6 +41,14 @@ GRAY            = (170, 165, 155)
 GREEN           = (80, 170, 100)
 RED             = (200, 80, 80)
 WHITE           = (255, 255, 255)
+
+# 四种方向各自的颜色
+DIR_COLORS = {
+    'U': (60, 160, 90),    # 绿
+    'D': (60, 95, 170),    # 蓝
+    'L': (220, 140, 50),   # 橙
+    'R': (150, 80, 170),   # 紫
+}
 
 DIRS = {'U': (-1, 0), 'D': (1, 0), 'L': (0, -1), 'R': (0, 1)}
 
@@ -130,6 +137,8 @@ class ArrowGame:
         self.menu_select_btn = pygame.Rect(180, 415, 240, 55)
         self.restart_btn = pygame.Rect(460, 20, 120, 38)
         self.back_btn = pygame.Rect(20, 20, 100, 38)
+        self.undo_btn = pygame.Rect(460, 65, 55, 32)
+        self.hint_btn = pygame.Rect(525, 65, 55, 32)
         self.level_buttons = []  # 选关按钮
         self.load_level(0)
 
@@ -162,6 +171,9 @@ class ArrowGame:
         self.stars = 3
         self.flying = []     # 飞出棋盘的箭头
         self.bouncing = []   # 被挡住后飞出又弹回的箭头
+        self.history = []    # 已消除的箭头 [(row, col, dir)]
+        self.hint_pos = None # 提示高亮的格子 (row, col)
+        self.hint_start = 0
         self.board_w = self.cols * CELL_SIZE
         self.board_h = self.rows * CELL_SIZE
         self.board_x = (SCREEN_W - self.board_w) // 2
@@ -193,6 +205,21 @@ class ArrowGame:
         if self.back_btn.collidepoint(mx, my):
             self.state = 'LEVEL_SELECT'
             return
+        # 撤销按钮
+        if self.undo_btn.collidepoint(mx, my):
+            if self.history:
+                r, c, d = self.history.pop()
+                self.grid[r][c] = d
+            return
+        # 提示按钮：找一个可消除的箭头高亮
+        if self.hint_btn.collidepoint(mx, my):
+            for r in range(self.rows):
+                for c in range(self.cols):
+                    if self.grid[r][c] is not None and not self.is_blocked(r, c):
+                        self.hint_pos = (r, c)
+                        self.hint_start = time.time()
+                        return
+            return
         col = (mx - self.board_x) // CELL_SIZE
         row = (my - self.board_y) // CELL_SIZE
         if not (0 <= row < self.rows and 0 <= col < self.cols):
@@ -202,7 +229,6 @@ class ArrowGame:
         if any(b['row'] == row and b['col'] == col for b in self.bouncing):
             return
         if self.is_blocked(row, col):
-            # 被挡住：沿方向飞出一段再弹回
             d = self.grid[row][col]
             dr, dc = DIRS[d]
             self.bouncing.append({
@@ -222,6 +248,7 @@ class ArrowGame:
                 'dr': dr, 'dc': dc, 'start': time.time(),
             })
             self.grid[row][col] = None
+            self.history.append((row, col, d))
 
     # ---------- 更新 ----------
     def update(self):
@@ -248,18 +275,28 @@ class ArrowGame:
                     self.state = 'WIN'
 
     # ---------- 绘制 ----------
-    def draw_arrow(self, x, y, direction, color=ARROW_COLOR, size=40):
+    def draw_arrow(self, x, y, direction, color=None, size=40):
+        """以 (x,y) 为中心画带箭杆的箭头，direction 决定方向，color 覆盖默认色。"""
+        if color is None:
+            color = DIR_COLORS.get(direction, (100, 100, 100))
         h = size // 2
-        if direction == 'U':
-            pts = [(x, y - h), (x - h, y + h), (x + h, y + h)]
-        elif direction == 'D':
-            pts = [(x, y + h), (x - h, y - h), (x + h, y - h)]
-        elif direction == 'L':
-            pts = [(x - h, y), (x + h, y - h), (x + h, y + h)]
+        shaft_w = 10
+        # 箭杆矩形
+        if direction in ('U', 'D'):
+            shaft = pygame.Rect(x - shaft_w // 2, y - h + 6, shaft_w, size - 12)
         else:
-            pts = [(x + h, y), (x - h, y - h), (x - h, y + h)]
+            shaft = pygame.Rect(x - h + 6, y - shaft_w // 2, size - 12, shaft_w)
+        pygame.draw.rect(self.screen, color, shaft, border_radius=3)
+        # 箭头三角
+        if direction == 'U':
+            pts = [(x, y - h), (x - h, y - h + 18), (x + h, y - h + 18)]
+        elif direction == 'D':
+            pts = [(x, y + h), (x - h, y + h - 18), (x + h, y + h - 18)]
+        elif direction == 'L':
+            pts = [(x - h, y), (x - h + 18, y - h), (x - h + 18, y + h)]
+        else:
+            pts = [(x + h, y), (x + h - 18, y - h), (x + h - 18, y + h)]
         pygame.draw.polygon(self.screen, color, pts)
-        pygame.draw.polygon(self.screen, WHITE, pts, 2)
 
     def draw_stars(self, cx, cy, count, star_size=24):
         """在 (cx, cy) 居中画 count 颗实心星，其余空心。"""
@@ -361,6 +398,16 @@ class ArrowGame:
         pygame.draw.rect(self.screen, color, self.restart_btn, border_radius=8)
         rb = self.font_small.render("重开本关", True, WHITE)
         self.screen.blit(rb, rb.get_rect(center=self.restart_btn.center))
+        # 撤销按钮
+        undo_color = BTN_HOVER if self.undo_btn.collidepoint(mouse) else (130, 130, 130)
+        pygame.draw.rect(self.screen, undo_color, self.undo_btn, border_radius=6)
+        ub = self.font_tiny.render("撤销", True, WHITE)
+        self.screen.blit(ub, ub.get_rect(center=self.undo_btn.center))
+        # 提示按钮
+        hint_color = BTN_HOVER if self.hint_btn.collidepoint(mouse) else (130, 130, 130)
+        pygame.draw.rect(self.screen, hint_color, self.hint_btn, border_radius=6)
+        hb = self.font_tiny.render("提示", True, WHITE)
+        self.screen.blit(hb, hb.get_rect(center=self.hint_btn.center))
 
     def draw_board(self):
         pygame.draw.rect(self.screen, BOARD_COLOR,
@@ -378,7 +425,10 @@ class ArrowGame:
     def draw_arrows(self):
         now = time.time()
         bouncing_set = {(b['row'], b['col']) for b in self.bouncing}
-        # 静态箭头（跳过正在弹回的）
+        # 提示高亮（2 秒后消失）
+        if self.hint_pos and now - self.hint_start > 2.5:
+            self.hint_pos = None
+        # 静态箭头
         for row in range(self.rows):
             for col in range(self.cols):
                 d = self.grid[row][col]
@@ -388,21 +438,28 @@ class ArrowGame:
                     continue
                 cx = self.board_x + col * CELL_SIZE + CELL_SIZE // 2
                 cy = self.board_y + row * CELL_SIZE + CELL_SIZE // 2
-                self.draw_arrow(cx, cy, d, ARROW_COLOR)
+                # 提示高亮框（闪烁）
+                if self.hint_pos == (row, col):
+                    pulse = 3 + int(2 * math.sin(now * 8))
+                    cell_rect = pygame.Rect(
+                        self.board_x + col * CELL_SIZE + 3,
+                        self.board_y + row * CELL_SIZE + 3,
+                        CELL_SIZE - 6, CELL_SIZE - 6)
+                    pygame.draw.rect(self.screen, GOLD, cell_rect, pulse, border_radius=6)
+                self.draw_arrow(cx, cy, d)
         # 飞出棋盘的箭头
         for f in self.flying:
             progress = (now - f['start']) / 0.4
             cx = self.board_x + f['col'] * CELL_SIZE + CELL_SIZE // 2 + f['dc'] * progress * 200
             cy = self.board_y + f['row'] * CELL_SIZE + CELL_SIZE // 2 + f['dr'] * progress * 200
-            self.draw_arrow(cx, cy, f['dir'], ARROW_COLOR)
-        # 被挡住后弹出又弹回的箭头
+            self.draw_arrow(cx, cy, f['dir'])
+        # 被挡住后弹出又弹回的箭头（红色）
         for b in self.bouncing:
             progress = (now - b['start']) / 0.5
-            # 三角形位移：前 60% 飞出，后 40% 弹回
             if progress < 0.6:
-                offset = (progress / 0.6) * 30   # 飞出 30px
+                offset = (progress / 0.6) * 30
             else:
-                offset = (1 - (progress - 0.6) / 0.4) * 30  # 弹回
+                offset = (1 - (progress - 0.6) / 0.4) * 30
             cx = self.board_x + b['col'] * CELL_SIZE + CELL_SIZE // 2 + b['dc'] * offset
             cy = self.board_y + b['row'] * CELL_SIZE + CELL_SIZE // 2 + b['dr'] * offset
             self.draw_arrow(cx, cy, b['dir'], BLOCKED_COLOR)
