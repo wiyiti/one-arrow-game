@@ -88,9 +88,8 @@ def test_t06_restart():
 
 
 def test_levels_solvable():
-    """附加验证：每关都存在一条通关顺序（暴力搜索）。"""
-    def solve(grid, rows, cols):
-        # 找一个可消除的箭头
+    """附加验证：每关都存在一条通关顺序（暴力搜索），并输出箭头数和步数。"""
+    def solve(grid, rows, cols, path):
         for r in range(rows):
             for c in range(cols):
                 if grid[r][c] is None:
@@ -107,18 +106,27 @@ def test_levels_solvable():
                     cc += dc
                 if not blocked:
                     grid[r][c] = None
-                    if solve(grid, rows, cols):
+                    path.append((r, c))
+                    if solve(grid, rows, cols, path):
                         return True
+                    path.pop()
                     grid[r][c] = d
                     return False
-        # 没有可消除箭头：成功 iff 棋盘已空
         return all(grid[r][c] is None for r in range(rows) for c in range(cols))
 
+    print()
+    print("=" * 45)
+    print(f"{'关卡':<6}{'棋盘':<10}{'箭头数':<8}{'通关步数':<8}")
+    print("-" * 45)
     for i, level in enumerate(g.LEVELS):
         grid = [row[:] for row in level]
         rows, cols = len(grid), len(grid[0])
-        assert solve(grid, rows, cols), f"第 {i+1} 关无解！"
-        print(f"第 {i+1} 关：可通关 ✓")
+        arrow_count = sum(1 for row in grid for c in row if c is not None)
+        path = []
+        assert solve(grid, rows, cols, path), f"第 {i+1} 关无解！"
+        print(f"第 {i+1} 关{'':<3}{rows}x{cols:<8}{arrow_count:<8}{len(path):<8}")
+    print("=" * 45)
+    print("全部关卡可通关 ✓")
 
 
 if __name__ == '__main__':
