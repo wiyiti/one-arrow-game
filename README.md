@@ -14,6 +14,10 @@
 
 核心玩法参考微信小游戏《一箭又一箭》，仅参考玩法规则，代码、素材与关卡均为原创。
 
+## 演示
+
+<img src="screenshots/demo.gif" width="450" />
+
 ## 附加功能
 
 - **倒计时**：每关 75 秒，剩余 10 秒变红警告；
@@ -61,31 +65,31 @@ python test_game.py
 
 开始界面：
 
-![开始界面](screenshots/start.png)
+<img src="screenshots/start.png" width="350" />
 
 选关界面：
 
-![选关界面](screenshots/level_select.png)
+<img src="screenshots/level_select.png" width="350" />
 
 游戏界面：
 
-![游戏界面](screenshots/game.png)
+<img src="screenshots/game.png" width="350" />
 
 碰撞/失误反馈（箭头弹出变红后弹回，失误次数减 1）：
 
-![失误界面](screenshots/miss.png)
+<img src="screenshots/miss.png" width="350" />
 
 提示功能（金色闪烁高亮可消除箭头）：
 
-![提示界面](screenshots/hint.png)
+<img src="screenshots/hint.png" width="350" />
 
 失败界面：
 
-![失败界面](screenshots/fail.png)
+<img src="screenshots/fail.png" width="350" />
 
 可解性测试结果（每关箭头数与通关步数）：
 
-![测试结果](screenshots/test_result.png)
+<img src="screenshots/test_result.png" width="500" />
 
 ## 项目结构
 
