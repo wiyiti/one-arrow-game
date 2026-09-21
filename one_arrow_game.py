@@ -135,11 +135,14 @@ class ArrowGame:
         self.lose_reason = ''
         self.menu_start_btn = pygame.Rect(180, 340, 240, 55)
         self.menu_select_btn = pygame.Rect(180, 415, 240, 55)
-        self.restart_btn = pygame.Rect(460, 20, 120, 38)
-        self.back_btn = pygame.Rect(20, 20, 100, 38)
-        self.undo_btn = pygame.Rect(460, 65, 55, 32)
-        self.hint_btn = pygame.Rect(525, 65, 55, 32)
+        self.restart_btn = pygame.Rect(470, 8, 120, 34)
+        self.back_btn = pygame.Rect(10, 8, 70, 34)
+        self.undo_btn = pygame.Rect(10, 90, 60, 28)
+        self.hint_btn = pygame.Rect(80, 90, 60, 28)
+        self.solve_btn = pygame.Rect(150, 90, 120, 28)
         self.level_buttons = []  # 选关按钮
+        self.auto_solve = None   # 自动求解队列 [(r,c), ...]
+        self.auto_solve_next = 0 # 下次点击时间
         self.load_level(0)
 
     def _mkfont(self, size):
@@ -174,6 +177,8 @@ class ArrowGame:
         self.history = []    # 已消除的箭头 [(row, col, dir)]
         self.hint_pos = None # 提示高亮的格子 (row, col)
         self.hint_start = 0
+        self.auto_solve = None
+        self.auto_solve_next = 0
         self.board_w = self.cols * CELL_SIZE
         self.board_h = self.rows * CELL_SIZE
         self.board_x = (SCREEN_W - self.board_w) // 2
@@ -196,8 +201,44 @@ class ArrowGame:
             c += dc
         return False
 
+    def _solve(self, grid, rows, cols, path):
+        """回溯搜索一条通关顺序，结果写入 path。"""
+        for r in range(rows):
+            for c in range(cols):
+                if grid[r][c] is None:
+                    continue
+                d = grid[r][c]
+                dr, dc = DIRS[d]
+                rr, cc = r + dr, c + dc
+                blocked = False
+                while 0 <= rr < rows and 0 <= cc < cols:
+                    if grid[rr][cc] is not None:
+                        blocked = True
+                        break
+                    rr += dr
+                    cc += dc
+                if not blocked:
+                    grid[r][c] = None
+                    path.append((r, c))
+                    if self._solve(grid, rows, cols, path):
+                        return True
+                    path.pop()
+                    grid[r][c] = d
+                    return False
+        return all(grid[r][c] is None for r in range(rows) for c in range(cols))
+
+    def start_auto_solve(self):
+        """对当前关卡求解并启动自动播放。"""
+        grid = [row[:] for row in self.grid]
+        path = []
+        if self._solve(grid, self.rows, self.cols, path):
+            self.auto_solve = path
+            self.auto_solve_next = time.time() + 0.5
+
     # ---------- 事件 ----------
     def handle_click(self, pos):
+        if self.auto_solve:
+            return  # 自动求解中不响应点击
         mx, my = pos
         if self.restart_btn.collidepoint(mx, my):
             self.load_level(self.level_idx)
@@ -211,7 +252,7 @@ class ArrowGame:
                 r, c, d = self.history.pop()
                 self.grid[r][c] = d
             return
-        # 提示按钮：找一个可消除的箭头高亮
+        # 提示按钮
         if self.hint_btn.collidepoint(mx, my):
             for r in range(self.rows):
                 for c in range(self.cols):
@@ -219,6 +260,10 @@ class ArrowGame:
                         self.hint_pos = (r, c)
                         self.hint_start = time.time()
                         return
+            return
+        # 自动求解按钮
+        if self.solve_btn.collidepoint(mx, my):
+            self.start_auto_solve()
             return
         col = (mx - self.board_x) // CELL_SIZE
         row = (my - self.board_y) // CELL_SIZE
@@ -255,6 +300,22 @@ class ArrowGame:
         now = time.time()
         self.flying = [f for f in self.flying if now - f['start'] < 0.4]
         self.bouncing = [b for b in self.bouncing if now - b['start'] < 0.5]
+        # 自动求解播放
+        if self.auto_solve and self.state == 'PLAY':
+            if now >= self.auto_solve_next and not self.flying:
+                r, c = self.auto_solve.pop(0)
+                d = self.grid[r][c]
+                if d is not None and not self.is_blocked(r, c):
+                    dr, dc = DIRS[d]
+                    self.flying.append({
+                        'row': r, 'col': c, 'dir': d,
+                        'dr': dr, 'dc': dc, 'start': now,
+                    })
+                    self.grid[r][c] = None
+                    self.history.append((r, c, d))
+                self.auto_solve_next = now + 0.6
+            if not self.auto_solve:
+                pass  # 等 flying 播完自然触发通关
         if self.state == 'PLAY':
             self.time_left = max(0, TIME_LIMIT - (now - self.level_start))
             if self.time_left <= 0:
@@ -363,7 +424,7 @@ class ArrowGame:
             stars_earned = self.progress['stars'].get(str(i), 0)
             if locked:
                 pygame.draw.rect(self.screen, GRAY, rect, border_radius=10)
-                lock_txt = self.font_mid.render("🔒", True, WHITE)
+                lock_txt = self.font_mid.render("锁", True, WHITE)
                 self.screen.blit(lock_txt, lock_txt.get_rect(center=rect.center))
             else:
                 hovered = rect.collidepoint(mouse)
@@ -381,40 +442,53 @@ class ArrowGame:
             self.level_buttons.append((rect, i, locked))
 
     def draw_hud(self):
-        level_txt = self.font_mid.render(f"第 {self.level_idx + 1} 关 / 共 {len(LEVELS)} 关", True, TEXT_COLOR)
-        self.screen.blit(level_txt, (20, 20))
-        arrows_txt = self.font_small.render(f"剩余箭头：{self.remaining_arrows()}", True, TEXT_COLOR)
-        self.screen.blit(arrows_txt, (20, 60))
-        # 失误/星星
-        miss_color = RED if self.misses_left <= 1 else TEXT_COLOR
-        miss_txt = self.font_small.render(f"剩余失误：{self.misses_left}", True, miss_color)
-        self.screen.blit(miss_txt, (20, 90))
-        # 实时星星
-        for s in range(3):
-            sx = 220 + s * 24
-            sc = GOLD if s < self.stars else GRAY
-            self._draw_star(sx, 100, 9, sc)
-        # 倒计时
-        t = int(self.time_left)
-        time_color = RED if t <= 10 else TEXT_COLOR
-        time_txt = self.font_small.render(f"{t}s", True, time_color)
-        self.screen.blit(time_txt, time_txt.get_rect(topright=(580, 90)))
-        # 重新开始按钮
         mouse = pygame.mouse.get_pos()
+        # 第一行：返回 / 关卡 / 重开
+        bcolor = BTN_HOVER if self.back_btn.collidepoint(mouse) else BTN_COLOR
+        pygame.draw.rect(self.screen, bcolor, self.back_btn, border_radius=8)
+        bt = self.font_small.render("返回", True, WHITE)
+        self.screen.blit(bt, bt.get_rect(center=self.back_btn.center))
+
+        level_txt = self.font_mid.render(f"第 {self.level_idx + 1} 关", True, TEXT_COLOR)
+        self.screen.blit(level_txt, (90, 12))
+
         color = BTN_HOVER if self.restart_btn.collidepoint(mouse) else BTN_COLOR
         pygame.draw.rect(self.screen, color, self.restart_btn, border_radius=8)
         rb = self.font_small.render("重开本关", True, WHITE)
         self.screen.blit(rb, rb.get_rect(center=self.restart_btn.center))
-        # 撤销按钮
+
+        # 第二行：统计信息
+        arrows_txt = self.font_small.render(f"剩余箭头：{self.remaining_arrows()}", True, TEXT_COLOR)
+        self.screen.blit(arrows_txt, (10, 48))
+        miss_color = RED if self.misses_left <= 1 else TEXT_COLOR
+        miss_txt = self.font_small.render(f"失误：{self.misses_left}", True, miss_color)
+        self.screen.blit(miss_txt, (130, 48))
+        # 星星
+        for s in range(3):
+            sx = 230 + s * 24
+            sc = GOLD if s < self.stars else GRAY
+            self._draw_star(sx, 58, 9, sc)
+        # 倒计时
+        t = int(self.time_left)
+        time_color = RED if t <= 10 else TEXT_COLOR
+        time_txt = self.font_small.render(f"时间 {t}s", True, time_color)
+        self.screen.blit(time_txt, time_txt.get_rect(topright=(590, 48)))
+
+        # 第三行：撤销 / 提示 / 自动求解
         undo_color = BTN_HOVER if self.undo_btn.collidepoint(mouse) else (130, 130, 130)
         pygame.draw.rect(self.screen, undo_color, self.undo_btn, border_radius=6)
         ub = self.font_tiny.render("撤销", True, WHITE)
         self.screen.blit(ub, ub.get_rect(center=self.undo_btn.center))
-        # 提示按钮
+
         hint_color = BTN_HOVER if self.hint_btn.collidepoint(mouse) else (130, 130, 130)
         pygame.draw.rect(self.screen, hint_color, self.hint_btn, border_radius=6)
         hb = self.font_tiny.render("提示", True, WHITE)
         self.screen.blit(hb, hb.get_rect(center=self.hint_btn.center))
+
+        solve_color = (180, 100, 180) if self.solve_btn.collidepoint(mouse) else (150, 90, 150)
+        pygame.draw.rect(self.screen, solve_color, self.solve_btn, border_radius=6)
+        sb = self.font_tiny.render("自动求解", True, WHITE)
+        self.screen.blit(sb, sb.get_rect(center=self.solve_btn.center))
 
     def draw_board(self):
         pygame.draw.rect(self.screen, BOARD_COLOR,
